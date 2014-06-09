@@ -175,7 +175,7 @@
                 FileName = Path,
                 RedirectStandardError = true,
                 RedirectStandardOutput = true,
-                UseShellExecute = false,
+                UseShellExecute = false
             };
 
             Console.WriteLine();
@@ -195,15 +195,40 @@
                 proc.BeginErrorReadLine();
                 var completed = proc.WaitForExit(Timeout);
 
-                if (!completed)
+                if (!completed && !proc.HasExited)
                 {
-                    log.WarnFormat("VLC did not quit before the alloted limit of {0}s, aborting VLC thread", CaptureTime);
+                    log.WarnFormat("VLC did not quit before the alloted limit of {0}s, closing VLC thread", CaptureTime);
 
-                    proc.Close();
+                    // Discard cached information about the process.
+                    proc.Refresh();
 
-                    if (!proc.HasExited)
+                    // Close process by sending a close message to its main window.
+                    log.WarnFormat("Sending CLOSE message to VLC.");
+                    proc.CloseMainWindow();
+
+                    try
                     {
-                        proc.Kill();
+                        if (!proc.HasExited)
+                        {
+                            log.WarnFormat("Unable to close VLC, killing process.");
+
+                            proc.Kill();
+                        }
+                    }
+                    catch (InvalidOperationException ex)
+                    {
+                        log.Error("Could not determine whether VLC was closed or not", ex);
+
+                        var vlcProcesses = Process.GetProcessesByName("vlc");
+                        if (vlcProcesses.Length > 1)
+                        {
+                            log.ErrorFormat("There are {0} VLC process running, killing all of them to restart service.", vlcProcesses.Length);
+
+                            foreach (var process in vlcProcesses)
+                            {
+                                process.Kill();
+                            }
+                        }
                     }
                 }
 
